@@ -1,34 +1,105 @@
-import discord from discord.ext import commands from discord import app_commands import random import asyncio
+import discord
+from discord.ext import commands
+from discord import app_commands
+import random
 
-intents = discord.Intents.default() bot = commands.Bot(command_prefix="/", intents=intents)
+intents = discord.Intents.default()
+bot = commands.Bot(command_prefix="!", intents=intents)
+tree = bot.tree
 
-def generate_azure_yeno_prediction(digits: int): return round(random.uniform(0.125000, 0.126999), digits)
+@bot.event
+async def on_ready():
+    print(f'Bot ready as {bot.user}')
+    try:
+        synced = await tree.sync()
+        print(f'Synced {len(synced)} command(s).')
+    except Exception as e:
+        print(f'Error syncing commands: {e}')
 
-def generate_offset(): return round(random.uniform(-0.03, 0.01), 2)
+def get_valid_range(script: str):
+    script = script.lower()
+    if script == "psalm":
+        return (0.123000, 0.126999)
+    elif script == "azure":
+        return (0.118000, 0.126999)
+    return (0.120000, 0.129999)
 
-@bot.event async def on_ready(): print(f"Bot ready as {bot.user}.") try: synced = await bot.tree.sync() print(f"Synced {len(synced)} command(s).") except Exception as e: print(e)
+def generate_offset(script: str):
+    script = script.lower()
+    if script == "psalm":
+        return round(random.uniform(-0.07, 0.05), 2)
+    elif script == "azure":
+        return round(random.uniform(-0.06, 0.06), 2)
+    return round(random.uniform(-0.08, 0.06), 2)
 
-@bot.tree.command(name="genz") @app_commands.describe( ping="Enter your ping (e.g., 68)", mode="Choose between 'camlock' or 'target'", type="Choose between 'normal' or 'xy'", digits="Number of digits (8–19 recommended)", set="How many sets to generate", yeno="Enable Yeno Optimized Mode", script="Choose script: psalm or azure" ) async def generate( interaction: discord.Interaction, ping: int, mode: str, type: str, digits: int, set: int, yeno: bool = False, script: str = "azure" ): if not (8 <= digits <= 22): await interaction.response.send_message("Digit count must be between 8 and 22.", ephemeral=True) return
+def generate_prediction_set(digits: int, count: int, script: str, typ: str):
+    predictions = []
+    used = set()
+    min_val, max_val = get_valid_range(script)
 
-results = []
-used = set()
+    while len(predictions) < count:
+        if typ == "xandy":
+            x = round(random.uniform(min_val, max_val), digits)
+            y = round(random.uniform(min_val, max_val), digits)
+            if str(x).startswith("0.10") or str(y).startswith("0.10"):
+                continue
+            key = (x, y)
+        else:
+            pred = round(random.uniform(min_val, max_val), digits)
+            if str(pred).startswith("0.10"):
+                continue
+            key = pred
 
-for _ in range(set):
-while True:
-if script == "azure" and yeno:
-pred = generate_azure_yeno_prediction(digits)
-else:
-pred = round(random.uniform(0.123000, 0.126999), digits)
-if pred not in used:
-used.add(pred)
-break
+        if key in used:
+            continue
+        used.add(key)
 
-jump = generate_offset()  
-fall = generate_offset()  
-results.append(f"Prediction: {pred}\nJump:       {jump}\nFall:       {fall}\n")
+        jump = generate_offset(script)
+        fall = generate_offset(script)
 
-msg = f"Ping: {ping}\nMode: {mode}\nType: {type}\nDigits: {digits}\nYeno Optimized: {yeno}\nScript: {script}\n\n" + "\n".join(results)
-await interaction.response.send_message(msg[:2000])
+        if typ == "xandy":
+            predictions.append(f"X: {x} | Y: {y} | Jump: {jump} | Fall: {fall}")
+        else:
+            predictions.append(f"Prediction: {key} | Jump: {jump} | Fall: {fall}")
 
-TOKEN = "YOUR_BOT_TOKEN_HERE" bot.run(TOKEN)
+    return predictions
 
+@tree.command(name="genz", description="Generate 2-tap prediction sets")
+@app_commands.describe(
+    ping="Your ping (e.g. 65)",
+    mode="Choose 'target' or 'camlock'",
+    type="Choose 'normal' or 'xandy'",
+    digits="Number of decimal digits (2–22)",
+    set="How many sets to generate",
+    yeno="Enable Yeno Optimized Mode (true/false)",
+    script="Choose 'psalm' or 'azure'"
+)
+async def genz(
+    interaction: discord.Interaction,
+    ping: int,
+    mode: str,
+    type: str,
+    digits: int,
+    set: int,
+    yeno: bool,
+    script: str
+):
+    if mode.lower() not in ["target", "camlock"]:
+        await interaction.response.send_message("Mode must be 'target' or 'camlock'", ephemeral=True)
+        return
+    if type.lower() not in ["normal", "xandy"]:
+        await interaction.response.send_message("Type must be 'normal' or 'xandy'", ephemeral=True)
+        return
+    if script.lower() not in ["psalm", "azure"]:
+        await interaction.response.send_message("Script must be 'psalm' or 'azure'", ephemeral=True)
+        return
+    if not (2 <= digits <= 22):
+        await interaction.response.send_message("Digits must be between 2 and 22", ephemeral=True)
+        return
+
+    results = generate_prediction_set(digits, set, script, type.lower())
+    formatted = f"**Ping:** {ping}\n**Mode:** {mode}\n**Type:** {type}\n**Digits:** {digits}\n**Yeno:** {yeno}\n**Script:** {script}\n\n"
+    formatted += "\n".join(results)
+    await interaction.response.send_message(f"```{formatted[:1990]}```")
+
+bot.run("MTM3Njk3NDg2MDIzMTkwMTI3NA.Gvh52g.vvBg76RA6weZ6JsgneuPQIq69DzpOWIHUZRd54")
